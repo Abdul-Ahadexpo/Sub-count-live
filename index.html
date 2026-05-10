@@ -1,0 +1,149 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live YouTube Stats</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f0f0f; color: white; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .stat-value { font-size: 5rem; font-weight: 800; letter-spacing: -2px; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .live-dot { height: 10px; width: 10px; background-color: #ff0000; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="w-full max-w-2xl">
+        <!-- Settings Header -->
+        <div class="glass rounded-3xl p-6 mb-8">
+            <h1 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                <span class="live-dot"></span> Live Channel Tracker
+            </h1>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs uppercase tracking-widest text-gray-400 mb-1">API Key</label>
+                    <!-- Hardcoded your default API key here -->
+                    <input type="password" id="apiKey" value="AIzaSyA7R4L1SwCtdZTt2SLM5mqA2u6zdKiToKg" placeholder="Paste your YouTube API v3 key here" 
+                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-red-500 transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-widest text-gray-400 mb-1">Channel Handle or ID</label>
+                    <input type="text" id="channelInput" placeholder="e.g. @MrBeast or UCxxxxxxxx" 
+                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-red-500 transition-all">
+                </div>
+                <button onclick="startTracking()" class="w-full bg-red-600 hover:bg-red-700 font-bold py-3 rounded-xl transition-all">
+                    Start Live Tracking
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats Display -->
+        <div id="displayArea" class="hidden space-y-6">
+            <div class="glass rounded-[2rem] p-10 text-center">
+                <div id="channelHeader" class="flex flex-col items-center mb-6">
+                    <img id="avatar" src="" class="w-24 h-24 rounded-full border-4 border-red-600 mb-4 hidden">
+                    <h2 id="channelName" class="text-2xl font-bold text-gray-200">Loading...</h2>
+                </div>
+                
+                <p class="text-xs uppercase tracking-[0.2em] text-gray-400">Subscribers</p>
+                <div id="subCount" class="stat-value text-white tabular-nums">000</div>
+                
+                <div class="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-white/5">
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Total Views</p>
+                        <p id="viewCount" class="text-xl font-semibold">0</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-widest text-gray-500">Videos</p>
+                        <p id="videoCount" class="text-xl font-semibold">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorBox" class="hidden mt-4 p-4 bg-red-900/30 border border-red-500/50 text-red-200 rounded-xl text-center"></div>
+    </div>
+
+    <script>
+        let intervalId = null;
+
+        async function startTracking() {
+            const key = document.getElementById('apiKey').value.trim();
+            let input = document.getElementById('channelInput').value.trim();
+            const errorBox = document.getElementById('errorBox');
+            const displayArea = document.getElementById('displayArea');
+
+            if (!key || !input) {
+                showError("Bro, I need both the API key and the channel name! (￢_￢)");
+                return;
+            }
+
+            errorBox.classList.add('hidden');
+            if (intervalId) clearInterval(intervalId);
+
+            try {
+                let channelId = input;
+                // If it's a handle, resolve it to a Channel ID
+                if (input.startsWith('@') || !input.startsWith('UC')) {
+                    const handle = input.startsWith('@') ? input : '@' + input;
+                    const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${handle}&key=${key}`);
+                    const data = await res.json();
+                    
+                    if (data.error) {
+                        throw new Error(data.error.message || "API Error");
+                    }
+
+                    if (data.items && data.items.length > 0) {
+                        channelId = data.items[0].id;
+                    } else {
+                        throw new Error("Could't find that channel, bro. Check the handle.");
+                    }
+                }
+
+                updateStats(channelId, key);
+                intervalId = setInterval(() => updateStats(channelId, key), 10000); 
+                displayArea.classList.remove('hidden');
+                
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        async function updateStats(id, key) {
+            try {
+                const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&id=${id}&key=${key}`);
+                const data = await res.json();
+
+                if (data.items && data.items.length > 0) {
+                    const stats = data.items[0].statistics;
+                    const snippet = data.items[0].snippet;
+
+                    document.getElementById('subCount').innerText = Number(stats.subscriberCount).toLocaleString();
+                    document.getElementById('viewCount').innerText = Number(stats.viewCount).toLocaleString();
+                    document.getElementById('videoCount').innerText = Number(stats.videoCount).toLocaleString();
+                    document.getElementById('channelName').innerText = snippet.title;
+                    
+                    const avatar = document.getElementById('avatar');
+                    avatar.src = snippet.thumbnails.medium.url;
+                    avatar.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("Fetch error:", err);
+            }
+        }
+
+        function showError(msg) {
+            const errorBox = document.getElementById('errorBox');
+            errorBox.innerText = msg;
+            errorBox.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
+
+```
